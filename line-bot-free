@@ -1,0 +1,297 @@
+const express = require('express');
+const line = require('@line/bot-sdk');
+const cron = require('node-cron');
+
+// LINE Bot設定
+const config = {
+  channelAccessToken: 'YOUR_CHANNEL_ACCESS_TOKEN', // LINE Developersから取得
+  channelSecret: 'YOUR_CHANNEL_SECRET' // LINE Developersから取得
+};
+
+const client = new line.Client(config);
+const app = express();
+
+// Webhookエンドポイント設定
+app.post('/webhook', line.middleware(config), (req, res) => {
+  Promise
+    .all(req.body.events.map(handleEvent))
+    .then((result) => res.json(result))
+    .catch((err) => {
+      console.error(err);
+      res.status(500).end();
+    });
+});
+
+// メッセージ処理関数
+async function handleEvent(event) {
+  if (event.type !== 'message' || event.message.type !== 'text') {
+    return Promise.resolve(null);
+  }
+
+  const userMessage = event.message.text;
+  const userId = event.source.userId;
+  
+  let replyMessage = generateResponse(userMessage);
+  
+  // 特定のキーワードでの分岐処理
+  if (userMessage.includes('天気')) {
+    replyMessage = {
+      type: 'text',
+      text: '今日はいい天気ですね！☀️\n外出日和です。水分補給を忘れずに！'
+    };
+  } else if (userMessage.includes('時間') || userMessage.includes('何時')) {
+    const now = new Date();
+    const timeStr = now.toLocaleString('ja-JP', {
+      timeZone: 'Asia/Tokyo',
+      hour: '2-digit',
+      minute: '2-digit',
+      month: 'short',
+      day: 'numeric'
+    });
+    replyMessage = {
+      type: 'text',
+      text: `現在の時刻は${timeStr}です⏰`
+    };
+  } else if (userMessage.includes('おはよう')) {
+    replyMessage = {
+      type: 'text',
+      text: 'おはようございます！🌅\n今日も一日頑張りましょう！\n\n何かお手伝いできることがあれば、いつでも声をかけてくださいね。'
+    };
+  } else if (userMessage.includes('おやすみ')) {
+    replyMessage = {
+      type: 'text',
+      text: 'お疲れさまでした！🌙\nゆっくり休んで、また明日お会いしましょう。\nおやすみなさい💤'
+    };
+  }
+
+  return client.replyMessage(event.replyToken, replyMessage);
+}
+
+// デフォルト応答メッセージ生成
+function generateResponse(userMessage) {
+  const responses = [
+    'ご連絡ありがとうございます！📱\n承知いたしました。',
+    'メッセージを受け取りました！\nお返事をお待ちください✨',
+    'いつもご利用ありがとうございます🙏\n確認いたします。',
+    'お疲れさまです！\n内容を確認させていただきますね。'
+  ];
+  
+  return {
+    type: 'text',
+    text: responses[Math.floor(Math.random() * responses.length)]
+  };
+}
+
+// プッシュメッセージ送信関数
+async function sendPushMessage(userId, message) {
+  try {
+    await client.pushMessage(userId, message);
+    console.log('プッシュメッセージ送信完了:', new Date());
+  } catch (error) {
+    console.error('プッシュメッセージ送信エラー:', error);
+  }
+}
+
+// 全ユーザーへの一斉送信
+async function broadcastMessage(message) {
+  try {
+    await client.broadcast(message);
+    console.log('一斉送信完了:', new Date());
+  } catch (error) {
+    console.error('一斉送信エラー:', error);
+  }
+}
+
+// 定期メッセージ設定
+
+// 毎朝8時に挨拶メッセージ
+cron.schedule('0 8 * * *', async () => {
+  const morningMessage = {
+    type: 'text',
+    text: 'おはようございます！🌅\n\n今日も素敵な一日をお過ごしください。\n何かご質問がございましたら、いつでもお気軽にお声がけください！'
+  };
+  
+  await broadcastMessage(morningMessage);
+}, {
+  timezone: "Asia/Tokyo"
+});
+
+// 毎週月曜日9時に週始めのメッセージ
+cron.schedule('0 9 * * 1', async () => {
+  const mondayMessage = {
+    type: 'text',
+    text: '新しい週の始まりです！💪\n\n今週もよろしくお願いいたします。\n皆さまにとって実り多い一週間となりますように✨'
+  };
+  
+  await broadcastMessage(mondayMessage);
+}, {
+  timezone: "Asia/Tokyo"
+});
+
+// 毎月1日10時にお知らせメッセージ
+cron.schedule('0 10 1 * *', async () => {
+  const monthlyMessage = {
+    type: 'text',
+    text: '📅 新しい月が始まりました！\n\n今月のお得情報やイベントをお楽しみに🎉\n何かご不明な点がございましたら、お気軽にお問い合わせください。'
+  };
+  
+  await broadcastMessage(monthlyMessage);
+}, {
+  timezone: "Asia/Tokyo"
+});
+
+// 特別なイベント通知（例：金曜日の夕方）
+cron.schedule('0 17 * * 5', async () => {
+  const fridayMessage = {
+    type: 'text',
+    text: '金曜日お疲れさまでした！🎉\n\n素敵な週末をお過ごしください。\nまた来週、お待ちしております！'
+  };
+  
+  await broadcastMessage(fridayMessage);
+}, {
+  timezone: "Asia/Tokyo"
+});
+
+// リッチメッセージの例
+async function sendRichMessage(userId) {
+  const flexMessage = {
+    type: 'flex',
+    altText: 'お知らせメッセージ',
+    contents: {
+      type: 'bubble',
+      hero: {
+        type: 'image',
+        url: 'https://example.com/image.jpg', // 実際の画像URLに変更
+        size: 'full',
+        aspectRatio: '20:13',
+        aspectMode: 'cover'
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'text',
+            text: '特別なお知らせ',
+            weight: 'bold',
+            size: 'xl'
+          },
+          {
+            type: 'text',
+            text: '新サービスが開始されました！',
+            size: 'md',
+            color: '#666666',
+            margin: 'md'
+          }
+        ]
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'button',
+            action: {
+              type: 'uri',
+              label: '詳細を見る',
+              uri: 'https://example.com' // 実際のURLに変更
+            }
+          }
+        ]
+      }
+    }
+  };
+
+  await client.pushMessage(userId, flexMessage);
+}
+
+// 手動でメッセージ送信する関数（テスト用）
+async function sendTestMessage() {
+  const testUserId = 'USER_ID_HERE'; // 実際のユーザーIDに変更
+  
+  const testMessage = {
+    type: 'text',
+    text: 'これはテストメッセージです🧪\n\nBotが正常に動作していることを確認しています。'
+  };
+  
+  await sendPushMessage(testUserId, testMessage);
+}
+
+// ユーザー情報管理（簡易版）
+const userProfiles = new Map();
+
+function saveUserProfile(userId, profile) {
+  userProfiles.set(userId, {
+    ...profile,
+    lastActive: new Date()
+  });
+}
+
+function getUserProfile(userId) {
+  return userProfiles.get(userId);
+}
+
+// アクティブユーザー向けの特別メッセージ
+cron.schedule('0 12 * * *', async () => {
+  // 過去7日以内にアクティブなユーザーを特定
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  
+  const lunchMessage = {
+    type: 'text',
+    text: 'お昼の時間ですね🍱\n\nランチはお済みですか？\n午後も頑張りましょう！'
+  };
+  
+  // 実際の実装では、データベースからアクティブユーザーを取得
+  console.log('昼食時間の挨拶メッセージを準備中...');
+  // await broadcastMessage(lunchMessage);
+}, {
+  timezone: "Asia/Tokyo"
+});
+
+// サーバー起動
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`LINE Bot サーバーがポート${port}で起動しました`);
+  console.log('定期メッセージスケジュール:');
+  console.log('- 毎朝8時: 挨拶メッセージ');
+  console.log('- 毎週月曜9時: 週始めメッセージ');
+  console.log('- 毎月1日10時: 月始めお知らせ');
+  console.log('- 毎週金曜17時: 週末の挨拶');
+  console.log('- 毎日12時: ランチタイム挨拶');
+});
+
+// エラーハンドリング
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('未処理のPromise拒否:', promise, 'reason:', reason);
+});
+
+// セットアップ手順をコンソールに表示
+console.log(`
+=== LINE Bot セットアップ手順 ===
+
+1. LINE Developersコンソールでチャンネル作成
+   https://developers.line.biz/ja/
+
+2. 環境変数設定:
+   export CHANNEL_ACCESS_TOKEN="your_token_here"
+   export CHANNEL_SECRET="your_secret_here"
+
+3. 必要なパッケージインストール:
+   npm install express @line/bot-sdk node-cron
+
+4. Webhookエンドポイント設定:
+   https://yourdomain.com/webhook
+
+5. サーバー起動:
+   node app.js
+
+=== 機能一覧 ===
+✅ ユーザーメッセージへの自動応答
+✅ 定期的な挨拶メッセージ
+✅ キーワードによる分岐処理
+✅ プッシュメッセージ機能
+✅ リッチメッセージサンプル
+`);
+
+module.exports = { app, client, sendPushMessage, broadcastMessage };
